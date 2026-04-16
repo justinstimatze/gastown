@@ -847,6 +847,19 @@ func FindAllDoltListeners() []DoltListener {
 
 // isDoltServerOnPort checks if a dolt server is accepting connections on the given port.
 // More reliable than ps string matching for process identity verification (ZFC fix: gt-utuk).
+// IsExternalServerAvailable checks if a Dolt server is reachable on the given
+// port via MySQL protocol. Used to detect system-level Dolt services that Gas
+// Town didn't start (no PID file).
+func IsExternalServerAvailable(port int) bool {
+	dsn := fmt.Sprintf("root@tcp(127.0.0.1:%d)/", port)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	return db.Ping() == nil
+}
+
 func isDoltServerOnPort(port int) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 2*time.Second)
 	if err != nil {
@@ -1333,9 +1346,23 @@ behavior:
 	return os.WriteFile(configPath, []byte(content), 0600)
 }
 
-// Start starts the Dolt SQL server.
+// Start starts the Dolt SQL server. If a Dolt server is already listening
+// on the configured port (e.g., a system-level systemd service), Gas Town
+// adopts it instead of spawning its own — avoiding duplicate servers and
+// saving ~500 MB of memory from embedded Dolt engine startup.
 func Start(townRoot string) error {
 	config := DefaultConfig(townRoot)
+
+	// Check if a Dolt server is already running on our port (system-level
+	// or from another process). If so, adopt it — no need to manage our own.
+	if db, err := sql.Open("mysql", fmt.Sprintf("root@tcp(127.0.0.1:%d)/", config.Port)); err == nil {
+		if err := db.Ping(); err == nil {
+			db.Close()
+			fmt.Fprintf(os.Stderr, "Using existing Dolt server on port %d\n", config.Port)
+			return nil
+		}
+		db.Close()
+	}
 
 	// Ensure daemon directory exists
 	daemonDir := filepath.Dir(config.LogFile)

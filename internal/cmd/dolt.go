@@ -675,6 +675,20 @@ func runDoltStatus(cmd *cobra.Command, args []string) error {
 				fmt.Printf("    %s %s\n", style.Bold.Render("!"), w)
 			}
 		}
+	} else if doltserver.IsExternalServerAvailable(config.Port) {
+		// A Dolt server is running on the port but wasn't started by Gas Town
+		// (no PID file). This is typical of a system-level Dolt service.
+		fmt.Printf("%s Dolt server is %s (external, port %d)\n",
+			style.Bold.Render("●"),
+			style.Bold.Render("running"),
+			config.Port)
+		fmt.Printf("  Managed by: system (not Gas Town)\n")
+		metrics := doltserver.GetHealthMetrics(townRoot)
+		fmt.Printf("\n  %s\n", style.Bold.Render("Resource Metrics:"))
+		fmt.Printf("    Query latency: %v\n", metrics.QueryLatency.Round(time.Millisecond))
+		fmt.Printf("    Connections:   %d / %d (%.0f%%)\n",
+			metrics.Connections, metrics.MaxConnections, metrics.ConnectionPct)
+		fmt.Printf("    Disk usage:    %s\n", metrics.DiskUsageHuman)
 	} else {
 		fmt.Printf("%s Dolt server is %s\n",
 			style.Dim.Render("○"),
