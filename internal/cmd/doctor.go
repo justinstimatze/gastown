@@ -172,6 +172,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewBeadsBinaryCheck())
 	d.Register(doctor.NewDoltBinaryCheck())
 	d.Register(doctor.NewClaudeBinaryCheck())
+	d.Register(doctor.NewGroqCompoundCheck())
 	d.Register(doctor.NewDoltServerReachableCheck())
 
 	d.Register(doctor.NewTownGitCheck())
@@ -272,6 +273,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Hooks sync check
 	d.Register(doctor.NewStaleTaskDispatchCheck())
 	d.Register(doctor.NewHooksSyncCheck())
+	d.Register(doctor.NewHooksBaseCheck())
 
 	// Dolt data health checks (binary + server reachability moved to top as prerequisites)
 	d.Register(doctor.NewDoltMetadataCheck())

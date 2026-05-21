@@ -299,6 +299,44 @@ func TestResolveBeadsDirForID_NoRoutes(t *testing.T) {
 	}
 }
 
+func TestResolveBeadsDirForID_UsesTownRoutesFromWorktreeBeadsDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	townBeadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(townBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	worktreeBeadsDir := filepath.Join(tmpDir, "gastown", "polecats", "chrome", "gastown", ".beads")
+	if err := os.MkdirAll(worktreeBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	rigBeadsDir := filepath.Join(tmpDir, "gastown", "mayor", "rig", ".beads")
+	if err := os.MkdirAll(rigBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "mayor"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "mayor", "town.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	routesContent := `{"prefix": "gt-", "path": "gastown/mayor/rig"}
+{"prefix": "hq-", "path": "."}
+`
+	if err := os.WriteFile(filepath.Join(townBeadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := ResolveBeadsDirForID(worktreeBeadsDir, "gt-abc")
+	if result != rigBeadsDir {
+		t.Fatalf("ResolveBeadsDirForID(%q, %q) = %q, want %q", worktreeBeadsDir, "gt-abc", result, rigBeadsDir)
+	}
+	result = ResolveBeadsDirForID(worktreeBeadsDir, "hq-wisp-abc")
+	if result != townBeadsDir {
+		t.Fatalf("ResolveBeadsDirForID(%q, %q) = %q, want %q", worktreeBeadsDir, "hq-wisp-abc", result, townBeadsDir)
+	}
+}
+
 func TestGetRigNameForPrefix(t *testing.T) {
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
@@ -320,9 +358,9 @@ func TestGetRigNameForPrefix(t *testing.T) {
 	}{
 		{"gt-", "gastown"},
 		{"bd-", "beads"},
-		{"hq-", ""},       // Town-level, no specific rig
-		{"unknown-", ""},  // Not in routes
-		{"", ""},          // Empty prefix
+		{"hq-", ""},      // Town-level, no specific rig
+		{"unknown-", ""}, // Not in routes
+		{"", ""},         // Empty prefix
 	}
 
 	for _, tc := range tests {
@@ -332,6 +370,59 @@ func TestGetRigNameForPrefix(t *testing.T) {
 				t.Errorf("GetRigNameForPrefix(%q, %q) = %q, want %q", tmpDir, tc.prefix, result, tc.expected)
 			}
 		})
+	}
+}
+
+func TestGetRigDirForName(t *testing.T) {
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	routesContent := `{"prefix": "ga-", "path": "gantry"}
+{"prefix": "al-", "path": "algoanki/mayor/rig"}
+{"prefix": "hq-", "path": "."}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		rigName  string
+		expected string
+	}{
+		{"gantry", filepath.Join(tmpDir, "gantry")},
+		{"algoanki", filepath.Join(tmpDir, "algoanki/mayor/rig")},
+		{"unknown", ""}, // Not in routes
+		{"", ""},        // Empty rig name
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.rigName, func(t *testing.T) {
+			result := GetRigDirForName(tmpDir, tc.rigName)
+			if result != tc.expected {
+				t.Errorf("GetRigDirForName(%q, %q) = %q, want %q", tmpDir, tc.rigName, result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestGetRigDirForName_TownLevelNotReturned(t *testing.T) {
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	routesContent := `{"prefix": "hq-", "path": "."}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Town-level rig (path=".") should not be returned — it has no rig dir.
+	result := GetRigDirForName(tmpDir, "hq")
+	if result != "" {
+		t.Errorf("GetRigDirForName for town-level path = %q, want empty string", result)
 	}
 }
 
