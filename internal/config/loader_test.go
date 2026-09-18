@@ -1492,6 +1492,72 @@ func TestBuildStartupCommand_UsesRigAgentWhenRigPathProvided(t *testing.T) {
 	}
 }
 
+func TestBuildStartupCommand_ClearsBDTargetSelectors(t *testing.T) {
+	binDir := t.TempDir()
+	writeAgentStub(t, binDir, "agent")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	townRoot := t.TempDir()
+	rigPath := filepath.Join(townRoot, "testrig")
+	townSettings := NewTownSettings()
+	townSettings.RoleAgents = map[string]string{constants.RoleWitness: "target-cleaner"}
+	townSettings.Agents["target-cleaner"] = &RuntimeConfig{
+		Command: "agent",
+		Env: map[string]string{
+			"BEADS_DIR":                  "/agent/beads",
+			"BEADS_DOLT_DATA_DIR":        "/agent/data",
+			"BEADS_DOLT_SERVER_DATABASE": "agentdb",
+			"BEADS_DOLT_SERVER_SOCKET":   "/agent/socket",
+			"GT_DOLT_DATA":               "/agent/data",
+			"GT_DOLT_PORT":               "1555",
+			"GT_DOLT_HOST":               "agent-host",
+			"BEADS_DOLT_PORT":            "1555",
+			"BEADS_DOLT_SERVER_PORT":     "1555",
+			"BEADS_DOLT_SERVER_HOST":     "agent-host",
+			"BEADS_DOLT_AUTO_START":      "0",
+		},
+	}
+	if err := SaveTownSettings(TownSettingsPath(townRoot), townSettings); err != nil {
+		t.Fatalf("SaveTownSettings: %v", err)
+	}
+	if err := SaveRigSettings(RigSettingsPath(rigPath), NewRigSettings()); err != nil {
+		t.Fatalf("SaveRigSettings: %v", err)
+	}
+
+	cmd := BuildStartupCommand(map[string]string{
+		"GT_ROLE":                    constants.RoleWitness,
+		"BEADS_DIR":                  "/caller/beads",
+		"BEADS_DOLT_DATA_DIR":        "/caller/data",
+		"BEADS_DOLT_SERVER_DATABASE": "callerdb",
+		"GT_DOLT_DATA":               "/caller/data",
+		"GT_DOLT_PORT":               "1444",
+		"GT_DOLT_HOST":               "caller-host",
+	}, rigPath, "")
+
+	for _, key := range bdTargetSelectorEnvVars {
+		if !strings.Contains(cmd, key+"=") {
+			t.Fatalf("startup command missing cleared %s assignment: %q", key, cmd)
+		}
+	}
+	for _, stale := range []string{"/caller", "/agent", "callerdb", "agentdb"} {
+		if strings.Contains(cmd, stale) {
+			t.Fatalf("startup command leaked stale bd selector value %q: %q", stale, cmd)
+		}
+	}
+	for _, want := range []string{
+		"GT_DOLT_PORT=1555",
+		"GT_DOLT_HOST=agent-host",
+		"BEADS_DOLT_PORT=1555",
+		"BEADS_DOLT_SERVER_PORT=1555",
+		"BEADS_DOLT_SERVER_HOST=agent-host",
+		"BEADS_DOLT_AUTO_START=0",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("startup command missing preserved connection env %q: %q", want, cmd)
+		}
+	}
+}
+
 func TestBuildStartupCommand_UsesRoleAgentsFromTownSettings(t *testing.T) {
 	townRoot := t.TempDir()
 	rigPath := filepath.Join(townRoot, "testrig")
@@ -3811,11 +3877,11 @@ func TestBuildArgsWithPromptWarnsOnDroppedPrompt(t *testing.T) {
 //	}
 //
 // Manual test procedure:
-//  1. Set role_agents.mayor to each agent (claude, gemini, codex, cursor, auggie, amp, opencode)
+//  1. Set role_agents.mayor to each agent (claude, gemini, codex, kiro, cursor, auggie, amp, opencode)
 //  2. Run: gt start
 //  3. Verify mayor starts with correct agent config
 //  4. Run: GT_NUKE_ACKNOWLEDGED=1 gt down --nuke
-//  5. Repeat for all 7 built-in agents
+//  5. Repeat for all built-in agents
 func TestRoleAgentConfigWithCustomAgent(t *testing.T) {
 	skipIfAgentBinaryMissing(t, "opencode", "claude")
 	t.Parallel()
@@ -3906,7 +3972,7 @@ func TestRoleAgentConfigWithCustomAgent(t *testing.T) {
 }
 
 // TestMultipleAgentTypes tests that various built-in agent presets work correctly.
-// NOTE: Only these are actual built-in presets: claude, gemini, codex, cursor, auggie, amp, opencode.
+// NOTE: Only these are actual built-in presets: claude, gemini, codex, kiro, cursor, auggie, amp, opencode.
 // Variants like "claude-opus", "claude-haiku", "claude-sonnet" are NOT built-in - they need
 // to be defined as custom agents in TownSettings.Agents if specific model selection is needed.
 func TestMultipleAgentTypes(t *testing.T) {
